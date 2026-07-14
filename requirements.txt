@@ -1,0 +1,7 @@
+requests
+youtube-transcript-api
+yt-dlp
+opencv-python
+serpapi
+ffmpeg-python
+google-api-python-client
