@@ -1,0 +1,90 @@
+import asyncio
+import logging
+from pathlib import Path
+
+import yt_dlp
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+class ExtractionError(Exception):
+    pass
+
+
+def _resolve_stream_url_sync(video_url: str) -> str:
+    ydl_opts = {
+        "format": "best[ext=mp4]/best",
+        "quiet": True,
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "user_agent": _USER_AGENT,
+    }
+    if settings.youtube_cookies_file and settings.youtube_cookies_file.exists():
+        ydl_opts["cookiefile"] = str(settings.youtube_cookies_file)
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(video_url, download=False)
+        return info["url"]
+
+
+async def resolve_stream_url(video_url: str) -> str:
+    try:
+        return await asyncio.to_thread(_resolve_stream_url_sync, video_url)
+    except Exception as exc:
+        raise ExtractionError(f"could not resolve stream: {exc}") from exc
+
+
+async def extract_frame(stream_url: str, timestamp: float, output_path: Path) -> None:
+    command = [
+        "ffmpeg", "-y",
+        "-ss", str(timestamp),
+        "-i", stream_url,
+        "-vframes", "1",
+        "-q:v", "2",
+        str(output_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=settings.ffmpeg_timeout_seconds
+        )
+    except asyncio.TimeoutError as exc:
+        proc.kill()
+        await proc.wait()
+        raise ExtractionError(f"timed out extracting frame at {timestamp}s") from exc
+
+    if proc.returncode != 0:
+        raise ExtractionError(
+            f"ffmpeg failed at {timestamp}s: {stderr.decode(errors='replace').strip()}"
+        )
+
+
+async def extract_frames(
+    video_url: str, timestamps: list[float], job_dir: Path
+) -> tuple[list[tuple[float, Path]], list[str]]:
+    job_dir.mkdir(parents=True, exist_ok=True)
+    stream_url = await resolve_stream_url(video_url)
+
+    saved: list[tuple[float, Path]] = []
+    errors: list[str] = []
+    for ts in timestamps:
+        output_path = job_dir / f"frame_{ts}s.jpg"
+        try:
+            await extract_frame(stream_url, ts, output_path)
+            saved.append((ts, output_path))
+        except ExtractionError as exc:
+            logger.warning("frame extraction failed: %s", exc)
+            errors.append(str(exc))
+
+    return saved, errors
