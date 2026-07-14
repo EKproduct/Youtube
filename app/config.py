@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # Path to a Netscape-format cookies.txt, mounted as a secret/volume in deployment.
     youtube_cookies_file: Path | None = None
 
-    output_root: Path = Path("/data/extracted_frames")
+    output_root: Path = Path("extracted_frames")
     max_timestamps_per_request: int = 25
     ffmpeg_timeout_seconds: int = 30
 
