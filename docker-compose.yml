@@ -1,0 +1,17 @@
+services:
+  frame-extractor:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - frames-data:/data/extracted_frames
+      # Uncomment if YouTube requires an authenticated session (bot-detection / age-gated videos).
+      # - ./youtube_cookies.txt:/secrets/youtube_cookies.txt:ro
+    # environment:
+    #   - YOUTUBE_COOKIES_FILE=/secrets/youtube_cookies.txt
+    restart: unless-stopped
+
+volumes:
+  frames-data:

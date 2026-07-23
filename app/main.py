@@ -1,6 +1,8 @@
 import logging
 import shutil
+import tempfile
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +18,13 @@ app = FastAPI(title="YouTube Frame Extractor API")
 
 settings.output_root.mkdir(parents=True, exist_ok=True)
 app.mount("/frames", StaticFiles(directory=settings.output_root), name="frames")
+
+if settings.youtube_cookies_content:
+    # Written outside output_root deliberately: output_root is served publicly at /frames.
+    cookies_path = Path(tempfile.gettempdir()) / "youtube_cookies.txt"
+    cookies_path.write_text(settings.youtube_cookies_content)
+    settings.youtube_cookies_file = cookies_path
+    logger.info("wrote YouTube cookies from YOUTUBE_COOKIES_CONTENT to %s", cookies_path)
 
 
 @app.get("/healthz")

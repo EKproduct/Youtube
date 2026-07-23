@@ -1,0 +1,7 @@
+.venv
+.git
+.env
+*.ipynb
+extracted_frames
+__pycache__
+*.pyc
