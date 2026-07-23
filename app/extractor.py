@@ -20,7 +20,7 @@ class ExtractionError(Exception):
 
 def _resolve_stream_url_sync(video_url: str) -> str:
     ydl_opts = {
-        "format": "best[ext=mp4]/best",
+        "format": "bestvideo[ext=mp4]/best[ext=mp4]/best",
         "quiet": True,
         "noplaylist": True,
         "nocheckcertificate": True,
