@@ -35,11 +35,29 @@ def _resolve_stream_url_sync(video_url: str) -> str:
         "nocheckcertificate": True,
         "user_agent": _USER_AGENT,
     }
-    if settings.youtube_cookies_file and settings.youtube_cookies_file.exists():
+    cookies_configured = bool(
+        settings.youtube_cookies_file and settings.youtube_cookies_file.exists()
+    )
+    if cookies_configured:
         ydl_opts["cookiefile"] = str(settings.youtube_cookies_file)
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=False)
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+    except yt_dlp.utils.DownloadError as exc:
+        # With the permissive selector above, "Requested format is not available"
+        # no longer means a bad selector — it means YouTube returned a response with
+        # NO usable video streams (only storyboards/audio). That is what a bot-flagged
+        # datacenter IP gets. Surface the real cause instead of yt-dlp's cryptic text.
+        if "Requested format is not available" in str(exc):
+            raise ExtractionError(
+                "YouTube returned no usable video streams. The deployment IP is almost "
+                "certainly bot-flagged. Fix: set YOUTUBE_COOKIES_CONTENT (or "
+                "YOUTUBE_COOKIES_FILE) with fresh cookies exported from a logged-in "
+                "session, then redeploy. YouTube cookies are currently "
+                f"{'CONFIGURED' if cookies_configured else 'NOT configured'}."
+            ) from exc
+        raise
 
     # A single-format selection exposes "url"; a merged selection (shouldn't happen
     # with the "/"-only selector above, but guard anyway) exposes requested_formats.
@@ -54,6 +72,8 @@ def _resolve_stream_url_sync(video_url: str) -> str:
 async def resolve_stream_url(video_url: str) -> str:
     try:
         return await asyncio.to_thread(_resolve_stream_url_sync, video_url)
+    except ExtractionError:
+        raise
     except Exception as exc:
         raise ExtractionError(f"could not resolve stream: {exc}") from exc
 
