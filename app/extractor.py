@@ -20,7 +20,16 @@ class ExtractionError(Exception):
 
 def _resolve_stream_url_sync(video_url: str) -> str:
     ydl_opts = {
-        "format": "bestvideo[ext=mp4]/best[ext=mp4]/best",
+        # Frame extraction needs a single video stream, not audio, so a video-only
+        # DASH stream is ideal. Do NOT require ext=mp4: on datacenter IPs YouTube
+        # often returns only webm/av01 or HLS, and a strict mp4 selector then fails
+        # with "Requested format is not available". ffmpeg reads any of these.
+        "format": "bestvideo[height<=1080]/bestvideo/best[height<=1080]/best",
+        # Try several player clients; on flagged IPs some clients return an empty or
+        # restricted format list, so falling through them recovers more formats.
+        "extractor_args": {
+            "youtube": {"player_client": ["default", "android_vr", "web_safari", "tv"]}
+        },
         "quiet": True,
         "noplaylist": True,
         "nocheckcertificate": True,
@@ -31,7 +40,15 @@ def _resolve_stream_url_sync(video_url: str) -> str:
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=False)
+
+    # A single-format selection exposes "url"; a merged selection (shouldn't happen
+    # with the "/"-only selector above, but guard anyway) exposes requested_formats.
+    if info.get("url"):
         return info["url"]
+    requested = info.get("requested_formats")
+    if requested:
+        return requested[0]["url"]
+    raise KeyError("no playable stream URL in yt-dlp response")
 
 
 async def resolve_stream_url(video_url: str) -> str:
